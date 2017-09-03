@@ -3,6 +3,10 @@ package me.gingerbeard
 import me.gingerbeard.providers.Providers
 import sangria.schema._
 
+// todo: partial responses
+// todo: authorization?
+// todo: filtering of schema
+// todo: error handling
 package object model {
 
   import sangria.macros.derive._
@@ -14,48 +18,62 @@ package object model {
                         @GraphQLDescription("User full name")
                         fullName: String,
                         @GraphQLDescription("User birth date")
-                        birthDate: String,
+                        birthDate: Option[String],
                         @GraphQLDescription("User address")
                         address: String,
                         @GraphQLDescription("User avatar ID")
                         avatar: String,
                         @GraphQLDescription("Subscribers of this user")
-                        subscribers: Seq[String],
-                        @GraphQLDescription(
-                          "Channels this user is subscribed to")
-                        subscriptions: Seq[String],
+                        subscribers: List[String],
+                        @GraphQLDescription("Channels this user is subscribed to")
+                        subscriptions: List[String],
                         @GraphQLDescription("Videos added by this user")
-                        addedVideos: Seq[String],
+                        addedVideos: List[String],
                         @GraphQLDescription("Videos liked by this user")
-                        likedVideos: Seq[String])
+                        likedVideos: List[String])
 
   @GraphQLName("UserDetails")
   @GraphQLDescription("List of user details")
-  case class UserDetails(users: Seq[UserDetail])
+  case class UserDetails(users: List[UserDetail])
 
   case class VideoDetails(id: String,
                           title: String,
                           likes: Int,
-                          dislikes: String,
+                          dislikes: Int,
                           watched: Int,
                           date: String,
                           thumbnail: String)
 
   case class Picture(small: String, large: String)
 
-  case class EnrichedUserDetail(login: String,
-                                fullName: String,
-                                birthDate: String,
-                                address: String,
-                                avatar: Picture,
-                                subscribers: Seq[EnrichedUserDetail],
-                                subscriptions: Seq[EnrichedUserDetail],
-                                addedVideos: Seq[VideoDetails],
-                                likedVideos: Seq[VideoDetails])
+  implicit val PictureType: ObjectType[Unit, Picture] = deriveObjectType[Unit, Picture]()
 
-  implicit val UserDetailType = deriveObjectType[Unit, UserDetail]()
+  implicit val VideoDetailsType: ObjectType[Unit, VideoDetails] = deriveObjectType[Unit, VideoDetails]()
 
-  //  implicit val UserDetailsType = deriveObjectType[Unit, UserDetails]
+  //  todo: add data fetchers
+  implicit lazy val EnrichedUserDetailType: ObjectType[Providers, UserDetail] =
+    deriveObjectType[Providers, UserDetail](
+      ReplaceField("subscribers", Field(
+        "subscribers",
+        ListType(EnrichedUserDetailType),
+        resolve = ctx => ctx.ctx.getUserDetails(ctx.value.subscribers)
+      )),
+      ReplaceField("subscriptions", Field(
+        "subscriptions",
+        ListType(EnrichedUserDetailType),
+        resolve = ctx => ctx.ctx.getUserDetails(ctx.value.subscriptions)
+      )),
+      ReplaceField("addedVideos", Field(
+        "addedVideos",
+        ListType(VideoDetailsType),
+        resolve = ctx => ctx.ctx.getVideos(ctx.value.addedVideos)
+      )),
+      ReplaceField("likedVideos", Field(
+        "likedVideos",
+        ListType(VideoDetailsType),
+        resolve = ctx => ctx.ctx.getVideos(ctx.value.likedVideos)
+      ))
+    )
 
   val AddressArg = Argument("address", OptionInputType(StringType))
 
@@ -64,7 +82,7 @@ package object model {
     fields[Providers, Unit](
       Field(
         "details",
-        ListType(UserDetailType),
+        ListType(EnrichedUserDetailType),
         arguments = AddressArg :: Nil,
         resolve = ctx => ctx.ctx.getUserDetails(ctx.arg(AddressArg))
       )
